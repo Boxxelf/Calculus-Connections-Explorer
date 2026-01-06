@@ -14,6 +14,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const courseSummary = d3.select('#course-selection-summary');
     const csTopicClearBtn = d3.select('#cs-topic-clear');
 
+    // Elements for the new calc-topic list view
+    const calcListContainer = d3.select('#calc-topic-list');
+    const calcListEmpty = d3.select('#calc-list-empty');
+    const csSelectionSummary = d3.select('#cs-selection-summary');
+    const listTab = d3.select('#calc-list-tab');
+    const mapTab = d3.select('#full-map-tab');
+    const calcListPanel = d3.select('#calc-list-panel');
+    const chartPanel = d3.select('#chart-panel');
+    const connectionThresholdInput = d3.select('#connection-threshold');
+    const connectionThresholdValue = d3.select('#connection-threshold-value');
+    const calcSortModeSelect = d3.select('#calc-sort-mode');
+
     const containerRect = container.node().getBoundingClientRect();
     const state = {
         width: containerRect.width,
@@ -38,6 +50,11 @@ document.addEventListener('DOMContentLoaded', () => {
         outgoingNodeIds: new Set(),
         selectedCSTopics: new Map(),
         csHighlightLevels: new Map(),
+        calcConnectionsByNodeId: new Map(),
+        connectionThreshold: 1,
+        calcSortMode: 'default',
+        expandedCalcPrereqIds: new Set(),
+        showFullMap: false,
         maxDegree: 0,
         activeTopicCode: null,
         initialFitDone: false
@@ -94,6 +111,45 @@ document.addEventListener('DOMContentLoaded', () => {
         instructionsDismissBtn.on('click', hideInstructions);
     }
 
+    // View mode tabs: connected calculus list vs full concept map
+    if (!listTab.empty() && !mapTab.empty() && !calcListPanel.empty() && !chartPanel.empty()) {
+        listTab.on('click', () => {
+            state.showFullMap = false;
+            listTab.classed('active', true);
+            mapTab.classed('active', false);
+            calcListPanel.classed('hidden', false);
+            chartPanel.classed('hidden', true);
+        });
+
+        mapTab.on('click', () => {
+            state.showFullMap = true;
+            listTab.classed('active', false);
+            mapTab.classed('active', true);
+            calcListPanel.classed('hidden', true);
+            chartPanel.classed('hidden', false);
+            if (state.initialFitDone) {
+                fitGraphToView({ animate: true });
+            }
+        });
+    }
+
+    // Filters for the calc-topic list
+    if (!connectionThresholdInput.empty() && !connectionThresholdValue.empty()) {
+        connectionThresholdInput.on('input', (event) => {
+            const value = Number(event.target.value) || 1;
+            state.connectionThreshold = value;
+            connectionThresholdValue.text(String(value));
+            renderCalcTopicList();
+        });
+    }
+
+    if (!calcSortModeSelect.empty()) {
+        calcSortModeSelect.on('change', (event) => {
+            state.calcSortMode = event.target.value || 'default';
+            renderCalcTopicList();
+        });
+    }
+
     if (!csTopicClearBtn.empty()) {
         csTopicClearBtn.on('click', () => {
             clearSelectedCSTopics();
@@ -128,7 +184,9 @@ document.addEventListener('DOMContentLoaded', () => {
         renderCalculusTree(state.calculusHierarchy);
         renderCSTopicTree(state.nodes);
         updateCourseSummary();
+        updateCsSelectionSummary();
         applyCourseFilter();
+        recomputeCalcConnections();
         updateNodeStyling();
 
         window.setTimeout(() => {
@@ -473,6 +531,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 updateCourseSummary();
                 applyCourseFilter();
+                recomputeCalcConnections();
                 updateNodeStyling();
                 updateCourseChildrenState(coreContainer, courseEntry.course);
             });
@@ -650,6 +709,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const totalTopics = d3.selectAll(`.cs-topic-button[data-category="${category}"]`).size();
         updateSelectAllCheckbox(category, totalTopics);
 
+        updateCsSelectionSummary();
+        recomputeCalcConnections();
         updateCSHighlights();
         updateNodeStyling();
         if (state.selectedNodeId) {
@@ -664,6 +725,8 @@ document.addEventListener('DOMContentLoaded', () => {
         state.selectedCSTopics.clear();
         d3.selectAll('.cs-topic-button').classed('active', false);
         d3.selectAll('.cs-select-all-checkbox').property('checked', false);
+        updateCsSelectionSummary();
+        recomputeCalcConnections();
     }
 
     function updateSelectAllCheckbox(category, totalTopics) {
@@ -720,6 +783,301 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             courseSummary.text(`Selected: ${Array.from(state.selectedCourses).join(', ')}`);
         }
+    }
+
+    function updateCsSelectionSummary() {
+        if (csSelectionSummary.empty()) {
+            return;
+        }
+
+        const entries = [];
+        state.selectedCSTopics.forEach((topicsSet, category) => {
+            topicsSet.forEach((topic) => {
+                entries.push(`${category} · ${topic}`);
+            });
+        });
+
+        if (entries.length === 0) {
+            csSelectionSummary.text('No CS topics selected. Pick one or more topics on the left.');
+            return;
+        }
+
+        const total = entries.length;
+        const preview = entries.slice(0, 4);
+        let summary = `CS topics selected (${total}): ${preview.join(', ')}`;
+        if (total > preview.length) {
+            summary += `, +${total - preview.length} more`;
+        }
+        csSelectionSummary.text(summary);
+    }
+
+    function recomputeCalcConnections() {
+        state.calcConnectionsByNodeId.clear();
+
+        const selectedFilters = getSelectedCSTopicFilters();
+        if (selectedFilters.length === 0) {
+            updateCalcListFiltersUI(0);
+            renderCalcTopicList();
+            return;
+        }
+
+        let maxConnections = 0;
+
+        state.nodes.forEach((node) => {
+            // 先根据 Calculus Courses 过滤：只对当前可见课程的节点计算连接
+            if (node.isCourseVisible === false) {
+                return;
+            }
+            const rationales = node.rationales || {};
+            let totalConnections = 0;
+            const filterSummaries = [];
+
+            selectedFilters.forEach(({ category, topic }) => {
+                const items = (rationales[category] || []).filter(
+                    (entry) => (entry.cs_topic || '').trim() === topic
+                );
+                if (items.length > 0) {
+                    totalConnections += items.length;
+                    filterSummaries.push({
+                        category,
+                        topic,
+                        count: items.length
+                    });
+                }
+            });
+
+            if (totalConnections > 0) {
+                state.calcConnectionsByNodeId.set(node.id, {
+                    node,
+                    totalConnections,
+                    filterSummaries
+                });
+                if (totalConnections > maxConnections) {
+                    maxConnections = totalConnections;
+                }
+            }
+        });
+
+        updateCalcListFiltersUI(maxConnections);
+        renderCalcTopicList();
+    }
+
+    function renderCalcTopicList() {
+        if (calcListContainer.empty()) {
+            return;
+        }
+
+        const hasCsSelection = state.selectedCSTopics.size > 0;
+
+        if (!hasCsSelection) {
+            calcListContainer.html('');
+            if (!calcListEmpty.empty()) {
+                calcListEmpty
+                    .classed('hidden', false)
+                    .select('p')
+                    .text('Choose a CS course or topic on the left to see the list of connected calculus ideas here.');
+            }
+            updateActiveCalcListTopic(null);
+            return;
+        }
+
+        const connections = Array.from(state.calcConnectionsByNodeId.values());
+
+        if (connections.length === 0) {
+            calcListContainer.html('');
+            if (!calcListEmpty.empty()) {
+                calcListEmpty
+                    .classed('hidden', false)
+                    .select('p')
+                    .text('No calculus topics are currently connected to the selected CS topics.');
+            }
+            updateActiveCalcListTopic(null);
+            return;
+        }
+
+        if (!calcListEmpty.empty()) {
+            calcListEmpty.classed('hidden', true);
+        }
+
+        // Determine max connections for heat map scaling
+        const maxConnections = connections.reduce(
+            (max, entry) => Math.max(max, entry.totalConnections),
+            1
+        );
+
+        // Clamp threshold
+        const clampedThreshold = Math.max(
+            1,
+            Math.min(state.connectionThreshold || 1, maxConnections)
+        );
+        state.connectionThreshold = clampedThreshold;
+
+        const filtered = connections.filter(
+            (entry) => entry.totalConnections >= clampedThreshold
+        );
+
+        let sorted = filtered.slice();
+        if (state.calcSortMode === 'alpha') {
+            sorted.sort((a, b) =>
+                (a.node.topicName || a.node.label || '').localeCompare(
+                    b.node.topicName || b.node.label || ''
+                )
+            );
+        } else if (state.calcSortMode === 'connections') {
+            sorted.sort((a, b) => b.totalConnections - a.totalConnections);
+        } else {
+            // Default: course -> core idea -> topic code
+            sorted.sort((a, b) => {
+                const courseA = (a.node.course || a.node.calc_level || '').localeCompare(
+                    b.node.course || b.node.calc_level || ''
+                );
+                if (courseA !== 0) return courseA;
+                const coreA = (a.node.coreIdea || '').localeCompare(b.node.coreIdea || '');
+                if (coreA !== 0) return coreA;
+                return String(a.node.topicCode || '').localeCompare(
+                    String(b.node.topicCode || '')
+                );
+            });
+        }
+
+        state.expandedCalcPrereqIds.clear();
+        calcListContainer.html('');
+
+        const rowSelection = calcListContainer
+            .selectAll('.calc-topic-row')
+            .data(sorted, (d) => d.node.id);
+
+        const rowEnter = rowSelection
+            .enter()
+            .append('div')
+            .attr('class', 'calc-topic-row')
+            .attr('data-node-id', (d) => d.node.id);
+
+        rowEnter.each(function (entry) {
+            const row = d3.select(this);
+            const node = entry.node;
+
+            const coreIdea =
+                node.coreIdea || state.topicMetaByCode.get(node.topicCode)?.coreIdea;
+            const categoryKey = getCoreIdeaCategory(coreIdea);
+            const courseKey = (node.course || node.calc_level || '')
+                .replace(/\s+/g, '-')
+                .toLowerCase();
+
+            const pill = row
+                .append('button')
+                .attr('type', 'button')
+                .attr(
+                    'class',
+                    `calc-pill calc-pill--${categoryKey}${
+                        courseKey === 'calculus-ii' ? ' calc-pill--calculus-ii' : ''
+                    }`
+                )
+                .on('click', (event) => {
+                    event.stopPropagation();
+                    selectCalculusNode(node, { fromSidebar: true });
+                });
+
+            const textWrapper = pill.append('div').style('flex', '1 1 auto');
+            textWrapper
+                .append('span')
+                .attr('class', 'calc-pill-label')
+                .text(node.topicName || node.label || '');
+            textWrapper
+                .append('div')
+                .attr('class', 'calc-pill-meta')
+                .text(() => {
+                    const course = node.course || node.calc_level || '';
+                    const idea = coreIdea || '';
+                    const parts = [];
+                    if (course) parts.push(course);
+                    if (idea) parts.push(idea);
+                    return parts.join(' · ');
+                });
+
+            pill
+                .append('span')
+                .attr('class', 'calc-pill-meta')
+                .text(`×${entry.totalConnections}`);
+        });
+
+        rowSelection.exit().remove();
+
+        // Highlight the currently selected calculus topic, if any
+        updateActiveCalcListTopic(state.selectedNodeId);
+
+        // Apply heat levels based on connection counts
+        calcListContainer.selectAll('.calc-topic-row').each(function (entry) {
+            const pill = d3.select(this).select('.calc-pill');
+            const ratio = maxConnections > 1 ? entry.totalConnections / maxConnections : 1;
+            let heatLevel = 1;
+            if (ratio >= 0.66) {
+                heatLevel = 3;
+            } else if (ratio >= 0.33) {
+                heatLevel = 2;
+            }
+            pill
+                .classed('calc-pill--heat-1', heatLevel === 1)
+                .classed('calc-pill--heat-2', heatLevel === 2)
+                .classed('calc-pill--heat-3', heatLevel === 3);
+        });
+    }
+
+    function getCoreIdeaCategory(coreIdea) {
+        const value = (coreIdea || '').toLowerCase();
+        if (!value) {
+            return 'other';
+        }
+        if (value.includes('limit')) {
+            return 'limits';
+        }
+        if (value.includes('deriv')) {
+            return 'derivatives';
+        }
+        if (value.includes('sequence') || value.includes('series')) {
+            return 'sequences';
+        }
+        if (value.includes('integral') || value.includes('area')) {
+            return 'integrals';
+        }
+        return 'other';
+    }
+
+    function updateCalcListFiltersUI(maxConnections) {
+        if (connectionThresholdInput.empty() || connectionThresholdValue.empty()) {
+            return;
+        }
+
+        if (maxConnections <= 1) {
+            state.connectionThreshold = 1;
+            connectionThresholdInput
+                .property('disabled', true)
+                .attr('min', 1)
+                .attr('max', 1)
+                .property('value', 1);
+            connectionThresholdValue.text('1');
+        } else {
+            const upper = Math.max(1, maxConnections);
+            connectionThresholdInput
+                .property('disabled', false)
+                .attr('min', 1)
+                .attr('max', upper);
+            if (!state.connectionThreshold || state.connectionThreshold > upper) {
+                state.connectionThreshold = 1;
+            }
+            connectionThresholdInput.property('value', state.connectionThreshold);
+            connectionThresholdValue.text(String(state.connectionThreshold));
+        }
+    }
+
+    function updateActiveCalcListTopic(nodeId) {
+        if (calcListContainer.empty()) {
+            return;
+        }
+        calcListContainer.selectAll('.calc-topic-row').classed('active', function () {
+            const currentId = d3.select(this).attr('data-node-id');
+            return Boolean(nodeId) && currentId === String(nodeId);
+        });
     }
 
     function applyCourseFilter() {
@@ -820,6 +1178,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.activeTopicCode = nodeData.topicCode || null;
 
         updateActiveSidebarTopic(state.activeTopicCode);
+        updateActiveCalcListTopic(nodeData.id);
         updateNodeStyling();
         showRationale(nodeData);
 
@@ -833,6 +1192,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.outgoingNodeIds.clear();
         state.activeTopicCode = null;
         updateActiveSidebarTopic(null);
+        updateActiveCalcListTopic(null);
         updateNodeStyling();
         rationaleDisplay.classed('hidden', true);
         emptyState.classed('hidden', false);
@@ -887,11 +1247,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const rationales = nodeData.rationales || {};
         rationaleContent.html('');
 
+        let hasMatchingRationales = false;
+
         if (selectedFilters.length === 0) {
             Object.entries(rationales).forEach(([category, items]) => {
                 appendRationaleCategory(category, items);
             });
-                } else {
+            if (Object.keys(rationales).length > 0) {
+                hasMatchingRationales = true;
+            }
+        } else {
             let added = false;
             selectedFilters.forEach(({ category, topic }) => {
                 const items = (rationales[category] || []).filter((entry) => (entry.cs_topic || '').trim() === topic);
@@ -906,10 +1271,27 @@ document.addEventListener('DOMContentLoaded', () => {
                     .attr('class', 'no-rationale-message')
                     .text('No rationales match the currently selected CS topics.');
             }
+            hasMatchingRationales = added;
         }
+
+        updateCalcPillRationaleState(nodeData.id, hasMatchingRationales, selectedFilters.length > 0);
 
         rationaleDisplay.classed('hidden', false);
         emptyState.classed('hidden', true);
+    }
+
+    function updateCalcPillRationaleState(nodeId, hasMatch, hasActiveFilters) {
+        if (!calcListContainer || calcListContainer.empty()) {
+            return;
+        }
+        const pill = calcListContainer
+            .select(`.calc-topic-row[data-node-id="${nodeId}"] .calc-pill`);
+        if (pill.empty()) {
+            return;
+        }
+        // 当有 CS 过滤但当前节点没有任何匹配的 rationale 时，将 pill 置为灰色
+        const shouldGreyOut = hasActiveFilters && !hasMatch;
+        pill.classed('calc-pill--no-rationale', shouldGreyOut);
     }
 
     function appendRationaleCategory(category, items, topicFilter) {

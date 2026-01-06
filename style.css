@@ -348,18 +348,264 @@ h1 {
 
 .chart-container {
     flex-grow: 1; /* Make chart container fill remaining space */
-    width: 100%;
+    width: auto;
     min-height: 0; /* Important for flex-grow to work in a column */
     border: 1px solid #ddd;
     background-color: #fff;
     border-radius: 12px;
     box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     position: relative;
+    display: flex;
+    flex-direction: column;
+    padding: 16px 18px;
+    margin: 0 8px; /* Leave a small gap on both sides so the white panel doesn't visually sit on top of the gray sidebars */
+    gap: 12px;
 }
 
 #chart {
     width: 100%;
     height: 100%;
+}
+
+/* Main header */
+.main-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.main-title-group h1 {
+    text-align: left; /* 覆盖全局 h1 居中，确保标题在中间区域左对齐 */
+    margin: 0;
+}
+
+.main-title-group .main-subtitle {
+    text-align: left;
+}
+
+.main-subtitle {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #6b7280;
+}
+
+.main-header-right {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+/* View tabs (list vs full map) */
+.view-tabs {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 2px;
+    background-color: #e5e7eb;
+    align-self: flex-start;
+}
+
+.view-tab {
+    border: none;
+    background: transparent;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #4b5563;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.view-tab.active {
+    background-color: #ffffff;
+    color: #111827;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
+}
+
+.view-tab:not(.active):hover {
+    color: #111827;
+}
+
+/* Calc list panel */
+.calc-list-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+    min-height: 0;
+}
+
+.calc-list-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.cs-selection-summary {
+    font-size: 0.85rem;
+    color: #374151;
+    max-width: 55%;
+}
+
+.calc-list-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+.calc-filter {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.8rem;
+    color: #4b5563;
+}
+
+.calc-filter-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#connection-threshold {
+    width: 120px;
+}
+
+#connection-threshold-value {
+    font-variant-numeric: tabular-nums;
+    min-width: 1.2em;
+    text-align: right;
+    color: #111827;
+    font-weight: 600;
+}
+
+#calc-sort-mode {
+    font-size: 0.8rem;
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid #d1d5db;
+    background-color: #f9fafb;
+}
+
+.calc-list-empty {
+    margin-top: 8px;
+}
+
+.calc-topic-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin-top: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-right: 4px;
+}
+
+.calc-topic-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 6px;
+    border-radius: 999px;
+    background-color: transparent;
+    transition: box-shadow 0.15s ease, background-color 0.15s ease;
+    flex-wrap: wrap;
+}
+
+.calc-topic-row.active {
+    box-shadow: 0 0 0 2px #2563eb33;
+    background-color: #eff6ff;
+}
+
+.calc-pill {
+    flex: 1;
+    max-width: 100%;
+    min-width: 0;
+    border-radius: 999px;
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: #ffffff;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 5px rgba(15, 23, 42, 0.25);
+    transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+
+.calc-pill:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.35);
+    filter: brightness(1.03);
+}
+
+.calc-pill-label {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.calc-pill-meta {
+    font-size: 0.75rem;
+    opacity: 0.9;
+}
+
+/* Category colors：统一为同一套偏蓝渐变，类别只在文本中体现，颜色仅编码连接强度 */
+.calc-pill--limits {
+    background: linear-gradient(135deg, #60a5fa, #1d4ed8);
+}
+
+.calc-pill--derivatives {
+    background: linear-gradient(135deg, #60a5fa, #1d4ed8);
+}
+
+.calc-pill--sequences {
+    background: linear-gradient(135deg, #60a5fa, #1d4ed8);
+}
+
+.calc-pill--integrals {
+    background: linear-gradient(135deg, #60a5fa, #1d4ed8);
+}
+
+.calc-pill--other {
+    background: linear-gradient(135deg, #60a5fa, #1d4ed8);
+}
+
+/* Calculus II pills：使用绿色渐变，与图中 Calculus II 节点保持一致 */
+.calc-pill--calculus-ii {
+    background: linear-gradient(135deg, #4CAF7D, #1F7A4A);
+}
+
+/* 无匹配 rationale 时的灰色状态 */
+.calc-pill--no-rationale {
+    background: linear-gradient(135deg, #e5e7eb, #9ca3af);
+    color: #111827;
+}
+
+/* Heat levels：通过亮度/饱和度/透明度拉开强弱差异 */
+.calc-pill--heat-1 {
+    /* 弱连接：最亮、最淡、稍微透明 */
+    filter: brightness(1.25) saturate(0.9);
+    opacity: 0.85;
+}
+
+.calc-pill--heat-2 {
+    /* 中连接：基准蓝色，不额外加强或削弱 */
+    filter: brightness(1.0) saturate(1.0);
+    opacity: 1;
+}
+
+.chart-panel {
+    flex: 1;
+    min-height: 0;
 }
 
 /* Rationale Display (in right sidebar) */
