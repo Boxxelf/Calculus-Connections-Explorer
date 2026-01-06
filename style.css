@@ -1,7 +1,7 @@
 /* Basic Setup */
 html {
-    /* 锁定基础字号，确保本地和 GitHub Pages 上 rem 表现一致 */
-    font-size: 16px;
+    /* 锁定基础字号，整体比默认略小一号，平衡本地与线上视觉效果 */
+    font-size: 15px;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
 }
