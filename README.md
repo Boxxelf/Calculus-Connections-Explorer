@@ -118,22 +118,3 @@ If you use or extend this work, please credit the **Calculus Connections Explore
 
 ---
 
-## Contributing
-
-Contributions are welcome, especially in the following areas:
-
-- Improving or refining the **topic mappings** between CS and calculus.
-- Enhancing the **user interface or accessibility** of the explorer.
-- Adding new **visualizations**, filters, or analytics.
-- Extending or clarifying the **rationales** and documentation.
-
-Please open an issue or submit a pull request in this repository to propose changes.
-
----
-
-## License
-
-Specify the project license here (for example, MIT, CC BY, or another open-source license).  
-If no license has been chosen yet, please add one before distributing or reusing this code and data.
-
-
